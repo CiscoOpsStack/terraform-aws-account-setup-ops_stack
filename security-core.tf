@@ -10,4 +10,5 @@ module "security-core" {
   # KMS Keys
   dynamo_kms_key_arn = module.dynamo_kms_key[0].kms_key_arn
   s3_kms_key_arn     = module.s3_kms_key[0].kms_key_arn
+  
 }
