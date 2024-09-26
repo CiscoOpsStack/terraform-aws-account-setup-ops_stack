@@ -156,3 +156,15 @@ variable "create_packer_iam" {
   type        = bool
   default     = false
 }
+
+variable "vpc_id" {
+  description = "ID for the VPC for the Base Security Groups"
+  type        = string
+  default     = ""
+}
+
+variable "create_base_sgs" {
+  description = "The key name to use for the EC2 Key Pair"
+  type        = bool
+  default     = false
+}
