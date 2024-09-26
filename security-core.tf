@@ -1,7 +1,7 @@
 module "security-core" {
   count = var.create_security_core ? 1 : 0
 
-  source = "github.com/CiscoOpsStack/terraform-aws-securitycore?ref=main"
+  source = "github.com/CiscoOpsStack/terraform-aws-securitycore-ops_stack-module?ref=main"
 
   application_account_numbers = var.application_account_numbers
   aws_region                  = var.aws_region
