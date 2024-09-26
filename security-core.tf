@@ -12,7 +12,11 @@ module "security-core" {
   s3_kms_key_arn     = module.s3_kms_key[0].kms_key_arn
 
   vpc_id = var.vpc_id
-
   create_base_sgs = var.create_base_sgs
+
+  lin_ingress_rules = var.lin_ingress_rules
+  lin_egress_rules  = var.lin_egress_rules
+  win_ingress_rules = var.win_ingress_rules
+  win_egress_rules  = var.win_egress_rules
 
 }
