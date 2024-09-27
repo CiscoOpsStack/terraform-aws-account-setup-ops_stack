@@ -164,7 +164,7 @@ variable "vpc_id" {
 }
 
 variable "create_base_sgs" {
-  description = "The key name to use for the EC2 Key Pair"
+  description = "Whether or not to create Base Security Groups"
   type        = bool
   default     = false
 }
