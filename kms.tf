@@ -303,6 +303,19 @@ data "aws_iam_policy_document" "secrets_manager_key" {
     }
   }
 
+  dynamic "statement" {
+    for_each = var.sm_key_share_roles
+    content {
+      effect    = "Allow"
+      actions   = ["kms:*"]
+      resources = ["*"]
+      principals {
+        identifiers = ["${statement.value}"]
+        type        = "AWS"
+      }
+    }
+  }
+
   statement {
     sid     = "Enable MGMT IAM User Permissions"
     effect  = "Allow"

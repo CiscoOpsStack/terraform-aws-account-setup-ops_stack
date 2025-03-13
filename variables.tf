@@ -232,3 +232,9 @@ variable "win_egress_rules" {
   }))
   default = []
 }
+
+variable "sm_key_share_roles" {
+  description = "AWS IAM Roles ARNs that might need shared access to the SM KMS keys"
+  type        = list(string)
+  default     = []
+}
