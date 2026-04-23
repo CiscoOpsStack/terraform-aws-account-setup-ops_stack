@@ -1,5 +1,6 @@
 ---
-# Required: Terraform, TFENV, Trivy, TFLINT, terraform-docs, tflint, 
+# Terraform: fmt (writes files), validate/tflint, terraform-docs, Checkov (IaC). Vulns: Grype (filesystem).
+# Lambda Python: Ruff via uvx; pytest + coverage via uv run; pip-audit via uv venv (requires uv).
 repos:
   - repo: "https://github.com/pre-commit/pre-commit-hooks"
     rev: v4.6.0
@@ -36,40 +37,103 @@ repos:
           - -b
           - master
       - id: pretty-format-json
+  # Gruntwork terraform-fmt only runs fmt -check (no writes). terraform_fmt here formats in place first.
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.89.1
+    hooks:
+      - id: terraform_fmt
+        args:
+          - --args=-recursive
+      - id: terraform_docs
+        args:
+          - --args=--output-file README.md
+          - --args=--output-mode inject
   - repo: "https://github.com/gruntwork-io/pre-commit"
     rev: v0.1.23
     hooks:
       # - id: gofmt # context: https://github.com/gruntwork-io/pre-commit/issues/67
       - id: shellcheck
-      - id: terraform-fmt
       - id: terraform-validate
         args:
           - --args=-no-color
       - id: terragrunt-hclfmt
       - id: tflint
       - id: yapf
-  - repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: v1.89.1
-    hooks:
-      - id: terraform_docs
-        args: 
-        - --args=--output-file README.md
-        - --args=--output-mode inject
-      - id: terraform_trivy
-        args:
-            - --args=--severity HIGH,CRITICAL
-            - --args=--ignorefile ./.trivyignore
-            - --args=--skip-dirs="**/.terraform"
-            - --args=--skip-dirs="*/modules"
   - repo: https://github.com/bridgecrewio/checkov.git
-    rev: '3.2.485'  # Use latest version
+    # Pinned to tag 3.2.485 (supply chain); bump tag + SHA together when upgrading.
+    rev: 416ce6b119616b2fa1c9332241f88c9e578e1d61
     hooks:
       - id: checkov
-        name: Checkov Terraform Compliance Scan
+        name: Checkov (Terraform + OPSTK policies from ops_stack_github_actions)
+        # Policies: https://github.com/CiscoOpsStack/ops_stack_github_actions/tree/main/checkov-policies
+        # Pin ?ref= to a full commit when bumping Checkov or policy sets; Checkov 3.2 calls scan_resource_conf(conf) only.
+        # Do not run `checkov -l` here: it lists the entire built-in registry and can look hung for a long time.
+        # Fail-policy: --soft-fail forces exit 0, then --hard-fail-on re-raises non-zero only for
+        # HIGH/CRITICAL findings. Mirrors the CI default in actions/checkov_scan (fail_on_severity: high).
+        verbose: true
         args:
           - --directory=.
           - --framework=terraform
-          - --external-checks-git=git@github.com:CiscoOpsStack/ops_stack_github_actions.git
-          - --external-checks-dir=checkov-policies
-          - --check=CKV_OPSTK_*,CKV2_OPSTK_*  # Only run custom policies
-
+          - --skip-path=examples
+          - --skip-results-upload
+          - --download-external-modules=false
+          - --external-checks-git
+          - https://github.com/CiscoOpsStack/ops_stack_github_actions.git//checkov-policies?ref=489f80d2e2f21476047cff85f2ef70e2216d604e
+          - --soft-fail
+          - --hard-fail-on
+          - HIGH,CRITICAL
+  - repo: local
+    hooks:
+      # Ruff has no CVSS-style severities (no --fail-on high/critical). The Bandit
+      # port lives under the `S` rule family — we treat `S` as the blocking tier
+      # (closest analog to HIGH/CRITICAL) and run everything else with --exit-zero.
+      # Ruff version: keep in sync with ops_stack_github_actions/actions/ruff.
+      - id: ruff-security
+        name: "Ruff security only (S rules; HIGH/CRITICAL analog) via uvx"
+        language: system
+        files: ^lambda/.*\.py$
+        pass_filenames: false
+        entry: >-
+          bash -c "set -euo pipefail;
+          command -v uvx >/dev/null || { echo 'uvx not found. Install uv: https://docs.astral.sh/uv/'; exit 1; };
+          uvx ruff@0.6.9 check lambda/ --select=S --ignore=S101 --output-format=github"
+      - id: ruff-style
+        name: "Ruff style+correctness (advisory; E,F,B,UP) via uvx"
+        language: system
+        files: ^lambda/.*\.py$
+        pass_filenames: false
+        entry: >-
+          bash -c "set -euo pipefail;
+          command -v uvx >/dev/null || { echo 'uvx not found. Install uv: https://docs.astral.sh/uv/'; exit 1; };
+          uvx ruff@0.6.9 check lambda/ --select=E,F,B,UP --exit-zero --output-format=github"
+      - id: grype-repo
+        name: "Grype filesystem scan (install: https://github.com/anchore/grype#installation)"
+        language: system
+        entry: bash -c 'set -euo pipefail; command -v grype >/dev/null || { echo "Install grype and ensure it is on PATH."; exit 1; }; grype dir:. --fail-on high --exclude "**/.terraform/**" --exclude "**/crane-layer.zip" --exclude "**/function.zip"'
+        pass_filenames: false
+      - id: pytest-lambda
+        name: "Lambda pytest + coverage gate (>=85%) via uv"
+        language: system
+        files: ^lambda/.*\.(py|txt|ini|cfg|toml)$
+        pass_filenames: false
+        entry: >-
+          bash -c "set -euo pipefail;
+          command -v uv >/dev/null || { echo 'uv not found. Install uv: https://docs.astral.sh/uv/'; exit 1; };
+          cd lambda;
+          AWS_DEFAULT_REGION=us-gov-west-1 uv run --with-requirements test_requirements.txt --
+          pytest test_image_deployment_manager.py
+          --cov=image_deployment_manager --cov-report=term-missing
+          --cov-fail-under=85 -q"
+      - id: pip-audit-lambda
+        name: "pip-audit (lambda/requirements_zip.txt) via uv venv + pip-audit --local"
+        language: system
+        files: ^lambda/requirements_zip\.txt$
+        pass_filenames: false
+        entry: >-
+          bash -c 'set -euo pipefail;
+          command -v uv >/dev/null || { echo "uv not found. Install uv: https://docs.astral.sh/uv/"; exit 1; };
+          workdir="$(mktemp -d)"; trap "rm -rf \"$workdir\"" EXIT;
+          venv="$workdir/venv";
+          uv venv "$venv";
+          uv pip install --python "$venv/bin/python" -r lambda/requirements_zip.txt;
+          uv run --python "$venv/bin/python" --with "pip-audit>=2.7" -- pip-audit --local --strict'
