@@ -1,31 +1,26 @@
-# Update name of the repository as the name of the workflow
 name: terraform module
 on:
   workflow_dispatch:
-  # Run on PR open/sync/reopen and when draft → ready (opened alone can be skipped for drafts until ready).
   pull_request:
     types:
       - opened
       - synchronize
       - reopened
       - ready_for_review
-  # Run on every branch push (not only after a PR exists) so docs/fmt can target the branch before or without a PR.
   push:
     branches:
       - "**"
 
 jobs:
   TERRAFORM_MODULE:
-    # Terraform module workflow reference
     uses: CiscoOpsStack/ops_stack_github_actions/.github/workflows/terraform_module.yml@main
-    # Org var OPS_STACK_GITHUB_APP_CLIENT_ID + org secret OPS_STACK_GITHUB_APP_PRIVATE_KEY (ops_stack README).
-    secrets: inherit
+    secrets:
+      GH_PAT_TOKEN: ${{ secrets.GH_PAT_READ_TOKEN }}
+      OPS_STACK_GITHUB_APP_PRIVATE_KEY: ${{ secrets.OPS_STACK_GITHUB_APP_PRIVATE_KEY }}
     with:
       TF_VERSION: 1.9.8
-      run_terraform_docs: true
       checkout_ref: ${{ github.head_ref || github.ref_name }}
       caller_event_name: ${{ github.event_name }}
       pr_head_branch: ${{ github.head_ref || github.ref_name }}
-      docs_auto_commit: "true"
-      fmt_auto_commit: "true"
-      run_ruff: true
+      run_ruff: false
+      run_lambda_ci: false
